@@ -28,6 +28,17 @@ function autoReply(adapter: ReturnType<typeof createMockAdapter>): void {
 }
 
 describe("aibridgejs core gates", () => {
+  test("call<T>() narrows the resolved type", async () => {
+    type EchoResponse = { echo: string };
+    const adapter = createMockAdapter();
+    autoReply(adapter);
+    const bridge = createBridge({ adapter });
+    const result = await bridge.call<EchoResponse>("ping");
+    // Type-level check — compilation fails if call<T>() returns Promise<unknown>:
+    const echoed: string = result.echo;
+    expect(echoed).toBe("ping");
+  });
+
   test("gate 1: ready gating — call queues until ready resolves", async () => {
     const adapter = createMockAdapter();
     autoReply(adapter);
@@ -236,6 +247,74 @@ describe("aibridgejs additional correctness", () => {
     autoReply(adapter);
     await bridge.call("again");
     expect(readySpy).toHaveBeenCalledTimes(2);
+  });
+
+  test("late adapter.ready() resolve after reset does not clobber the new ready's reject handle", async () => {
+    // Regression for the round-2 review finding: the previous wrappedReject
+    // cleared `readyReject` unconditionally on the success path, so a stale
+    // adapter.ready() that resolved AFTER reset created a new readyPromise
+    // would wipe the new round's reject handle, breaking subsequent reset().
+    const adapter = createMockAdapter();
+    let resolveOldReady: (() => void) | undefined;
+    const originalReady = adapter.ready;
+    let firstCall = true;
+    adapter.ready = () => {
+      if (firstCall) {
+        firstCall = false;
+        return new Promise<void>((r) => {
+          resolveOldReady = r;
+        });
+      }
+      // Subsequent rounds: also slow, so we can issue a second reset.
+      return new Promise<void>(() => {});
+    };
+    const bridge = createBridge({ adapter });
+
+    // Round 1: park on slow ready, then reset → BridgeResetError surfaces.
+    const r1 = bridge.ready();
+    bridge.reset();
+    await expect(r1).rejects.toBeInstanceOf(BridgeResetError);
+
+    // The old adapter.ready promise eventually resolves AFTER reset. This
+    // must not clear the new round's readyReject.
+    resolveOldReady?.();
+    await new Promise((r) => setTimeout(r, 0)); // let the resolve callback run
+
+    // Round 2: a new ready() must still be cancellable by reset().
+    const r2 = bridge.ready();
+    bridge.reset();
+    await expect(r2).rejects.toBeInstanceOf(BridgeResetError);
+
+    adapter.ready = originalReady;
+    bridge.dispose();
+  });
+
+  test("reset rejects calls and ready waiters parked on a slow adapter.ready()", async () => {
+    // Regression: previously reset() only cleared `pending` (entries written
+    // AFTER ready resolved). Calls awaiting a slow adapter.ready() never
+    // reached the pending map and stayed parked indefinitely past reset.
+    const adapter = createMockAdapter();
+    let resolveReady: (() => void) | undefined;
+    const slowReady = new Promise<void>((r) => {
+      resolveReady = r;
+    });
+    const originalReady = adapter.ready;
+    adapter.ready = () => slowReady; // never resolves until we choose
+    const bridge = createBridge({ adapter });
+
+    const inFlightCall = bridge.call("stuck");
+    const inFlightReady = bridge.ready();
+    bridge.reset();
+    await expect(inFlightCall).rejects.toBeInstanceOf(BridgeResetError);
+    await expect(inFlightReady).rejects.toBeInstanceOf(BridgeResetError);
+
+    // After reset, restore + try again; the stale resolve should not bleed
+    // into the new round.
+    adapter.ready = originalReady;
+    autoReply(adapter);
+    await bridge.call("recovered");
+    resolveReady?.(); // settle the dangling old promise; harmless.
+    bridge.dispose();
   });
 
   test("A7a: on() once + abort-first leaves no listener behind", async () => {

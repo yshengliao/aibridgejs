@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 // Build llms-full.txt by concatenating the canonical English documentation
 // surface so LLM agents can pull complete project context in one fetch.
+//
+// Modes:
+//   default          — write llms-full.txt with the freshly-built content.
+//   --check          — DO NOT write. Build in memory, compare with the file
+//                      on disk, exit 1 if they differ. Used by `verify:llms`
+//                      to catch drift both pre-commit and in CI.
 
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const checkOnly = process.argv.includes("--check");
 
 const sections = [
   { path: "README.md", title: null },
@@ -36,7 +43,30 @@ for (const { path, title } of sections) {
   out += "\n---\n";
 }
 
-await writeFile(resolve(root, "llms-full.txt"), out);
-
+const target = resolve(root, "llms-full.txt");
 const bytes = Buffer.byteLength(out, "utf8");
+
+if (checkOnly) {
+  let existing = "";
+  try {
+    existing = await readFile(target, "utf8");
+  } catch (err) {
+    if ((err && /** @type {{ code?: string }} */ (err).code) === "ENOENT") {
+      console.error("verify-llms: llms-full.txt is missing. Run `pnpm build:llms` first.");
+      process.exit(1);
+    }
+    throw err;
+  }
+  if (existing === out) {
+    console.log(`verify-llms: llms-full.txt is up-to-date (${(bytes / 1024).toFixed(1)} KB).`);
+    process.exit(0);
+  }
+  console.error(
+    "verify-llms: llms-full.txt is out of date relative to the source documents.\n" +
+      "  Run `pnpm build:llms` and commit the result.",
+  );
+  process.exit(1);
+}
+
+await writeFile(target, out);
 console.log(`build-llms-full: wrote llms-full.txt (${(bytes / 1024).toFixed(1)} KB).`);

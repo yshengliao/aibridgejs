@@ -6,6 +6,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-28
+
+### Fixed (correctness)
+
+- **`reset()` settles ready waiters parked on a slow `adapter.ready()`** ([src/bridge.ts](src/bridge.ts)): previously `reset()` cleared only the `pending` map (entries written after ready resolved). Calls awaiting a slow / hung `adapter.ready()` never reached `pending` and stayed parked indefinitely past reset. The cached `readyPromise`'s rejecter is now captured and invoked from `reset()`, so in-flight `call()` / `ready()` waiters surface a `BridgeResetError` synchronously. The captured rejecter uses an **identity guard** before clearing the module-level slot, so a stale `adapter.ready()` resolution arriving AFTER reset cannot clobber the new round's reject handle (regression caught by the round-2 review).
+
+### Documentation
+
+- **`generateId()` carries a SECURITY JSDoc** ([src/internal.ts](src/internal.ts)): the `Math.random()` fallback used on legacy WebViews is now explicitly documented as not cryptographically strong. Callers crossing a real trust boundary should layer a signed nonce on top of the envelope payload rather than relying on ID unpredictability.
+
+### Removed (packaging)
+
+- **Removed Traditional-Chinese llms files** (`llms_ZHTW.txt`, `llms-full_ZHTW.txt`): aibridgejs was the only ai*js package shipping localised LLM files; aifsmjs and aiecsjs ship English llms only. LLM agents ground in English; the ~27 KB of duplicated content was net cost (extra tarball size + sync burden) for no consumer. `README_ZHTW.md` and human-facing translations stay.
+
+### Added (tooling)
+
+- **`verify:llms` gate** ([scripts/build-llms-full.mjs](scripts/build-llms-full.mjs)): the script now accepts `--check`, which builds the file in memory and exits non-zero if it differs from disk. Wired into `prepublishOnly`. Works pre-commit and in CI alike (the previous form would have required `git diff --exit-code`, which fails any time the working tree has uncommitted changes).
+
+### Changed (API)
+
+- `Bridge.call` is now generic: `call<T = unknown>(method, payload?, options?): Promise<T>`. Existing callers that omit the type parameter keep `Promise<unknown>` and are unaffected. Casts like `as { token: string }` should be replaced with `bridge.call<{ token: string }>(...)`. The runtime does NOT validate the response — the generic is a caller assertion; validate with Zod / Valibot at the boundary when the host is untrusted.
+
+### Documentation
+
+- New "Error semantics (retry table)" section in `README.md`, `README_ZHTW.md`, and `llms-full.txt`. Each of the five error classes is now tagged retryable / not retryable, with the recommended caller response and an idiomatic `callWithReset()` helper.
+- All `bridge.call(...) as { ... }` examples migrated to the new `bridge.call<{ ... }>(...)` form.
+
+### Compatibility
+
+This release is **non-breaking at runtime**. Source compatibility is preserved for callers that did not pin the response type. Callers using `as`-style casts can keep them; the new generic form is the recommended replacement.
+
 ## [0.1.3] - 2026-05-28
 
 ### Fixed

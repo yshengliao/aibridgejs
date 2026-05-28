@@ -142,15 +142,20 @@ Rejects with the `AbortSignal` reason if cancelled before the adapter becomes re
 
 ---
 
-### `bridge.call(method, payload?, options?)`
+### `bridge.call<T>(method, payload?, options?)`
 
 ```ts
-call(
+call<T = unknown>(
   method: string,
   payload?: unknown,
   options?: { timeoutMs?: number; signal?: AbortSignal },
-): Promise<unknown>
+): Promise<T>
 ```
+
+The generic `T` is the expected shape of the response payload. The runtime does
+NOT validate the response — `T` is a caller assertion. Validate with Zod /
+Valibot at the boundary if the host is untrusted. Defaults to `unknown` so
+existing callers without a generic remain type-safe.
 
 Sends a `request` envelope and waits for the matched `response`. Rejects if:
 
@@ -214,6 +219,46 @@ dispose(): void
 ```
 
 Rejects all pending `call()` promises, removes all event listeners, and calls `adapter.dispose()`. After `dispose()`, the bridge must not be used.
+
+---
+
+## Error semantics
+
+Every error class extends `BridgeError`. Treat them as a discriminated union when deciding whether to retry:
+
+| Error | When it fires | Retryable? | Recommended response |
+|---|---|---|---|
+| `BridgeResetError` | A `reset()` happened while the call was in flight (or in the ready-wait that precedes it). | **Yes.** | Re-issue the call. The caller's `AbortSignal` is unaffected; a simple `for` loop with a max-retry cap is enough. |
+| `BridgeTimeoutError` | No response within `timeoutMs` (default 10 s, overridable per call). | **Yes.** | Retry with exponential backoff. If the host is genuinely down, the retry will surface as another timeout or a transport error — both are still observable. |
+| `BridgeRemoteError` | The host responded with `ok: false`. Holds the host's `code`, `message`, and optional `detail`. | **Depends on the remote contract.** | Switch on `error.code` and follow the host's documented policy. Generic retry will often re-trigger the same application error. |
+| `BridgeDisposedError` | `dispose()` was called before or during the call (or the iframe adapter detected its target window vanished). | **No.** | The bridge is gone. Construct a new `createBridge(...)` if you still need the channel. |
+| `BridgeError` | Catch-all base. Used if you `throw` from your own adapter or want to catch all of the above. | — | Inspect `error.name` to discriminate. |
+
+The runtime does NOT auto-retry. Wrap the call in your own retry helper when the policy is "transient errors are recoverable":
+
+```ts
+// Reference implementation. In production, also accept an external
+// AbortSignal and surface a circuit-breaker once the host is gone for good.
+async function callWithReset<T>(
+  bridge: Bridge,
+  method: string,
+  payload?: unknown,
+  maxAttempts = 3,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await bridge.call<T>(method, payload);
+    } catch (err) {
+      const isRetryable = err instanceof BridgeResetError || err instanceof BridgeTimeoutError;
+      if (!isRetryable || attempt + 1 >= maxAttempts) throw err;
+      // Exponential backoff with jitter — keeps the host from being hammered
+      // by a hot reload storm and gives a reset / re-ready cycle time to settle.
+      const delayMs = Math.min(1000, 100 * 2 ** attempt) + Math.floor(Math.random() * 50);
+      await new Promise<void>((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+```
 
 ---
 
@@ -479,7 +524,7 @@ import { bridge } from './bridge';
 
 await bridge.ready();
 
-const { token } = await bridge.call('session.getToken', { scope: 'game' }) as { token: string };
+const { token } = await bridge.call<{ token: string }>('session.getToken', { scope: 'game' });
 
 bridge.on('game.forceEnd', (payload) => {
   handleForceEnd(payload);

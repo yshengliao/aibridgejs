@@ -38,6 +38,11 @@ export function createBridge(options: BridgeOptions): Bridge {
   const internalController = new AbortController();
   let disposed = false;
   let readyPromise: Promise<void> | null = null;
+  // Captured `reject` of the cached `readyPromise`, so that `reset()` can
+  // settle ready waiters synchronously instead of leaving them parked
+  // forever on a slow adapter.ready(). Cleared whenever readyPromise resolves,
+  // rejects, or is invalidated by reset / dispose.
+  let readyReject: ((reason: unknown) => void) | null = null;
   let resetEpoch = 0;
 
   const unsubscribeAdapter = adapter.subscribe((envelope) => {
@@ -96,24 +101,36 @@ export function createBridge(options: BridgeOptions): Bridge {
     }
 
     if (!readyPromise) {
-      // The bridge wraps adapter.ready so that dispose() rejects the cached
-      // promise even when an adapter ignores its signal argument.
+      // The bridge wraps adapter.ready so that dispose() / reset() can settle
+      // the cached promise even when an adapter ignores its signal argument.
       readyPromise = new Promise<void>((resolve, reject) => {
+        // Identity-guarded reject. After reset() invalidates this promise and
+        // a new one takes its place, a late adapter.ready() resolve/reject
+        // from THIS round must not clear the NEW round's readyReject. We
+        // capture the local function and only clear the module-level slot if
+        // it still points at our handle.
+        const wrappedReject = (reason: unknown): void => {
+          if (readyReject === wrappedReject) readyReject = null;
+          reject(reason);
+        };
+        readyReject = wrappedReject;
+
         const onDisposed = (): void => {
           internalController.signal.removeEventListener("abort", onDisposed);
-          reject(new BridgeDisposedError());
+          wrappedReject(new BridgeDisposedError());
         };
         internalController.signal.addEventListener("abort", onDisposed, { once: true });
 
         adapter.ready(internalController.signal).then(
           () => {
             internalController.signal.removeEventListener("abort", onDisposed);
+            if (readyReject === wrappedReject) readyReject = null;
             if (disposed) reject(new BridgeDisposedError());
             else resolve();
           },
           (err) => {
             internalController.signal.removeEventListener("abort", onDisposed);
-            reject(err);
+            wrappedReject(err);
           },
         );
       });
@@ -143,7 +160,11 @@ export function createBridge(options: BridgeOptions): Bridge {
     });
   }
 
-  async function call(method: string, payload?: unknown, opts?: CallOptions): Promise<unknown> {
+  async function call<T = unknown>(
+    method: string,
+    payload?: unknown,
+    opts?: CallOptions,
+  ): Promise<T> {
     throwIfDisposed();
     const signal = opts?.signal;
     if (signal?.aborted) {
@@ -160,7 +181,7 @@ export function createBridge(options: BridgeOptions): Bridge {
     const id = generateId();
     const callTimeoutMs = opts?.timeoutMs ?? defaultTimeoutMs;
 
-    return new Promise<unknown>((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       let abortHandler: (() => void) | undefined;
 
@@ -175,7 +196,18 @@ export function createBridge(options: BridgeOptions): Bridge {
         }
       };
 
-      pending.set(id, { resolve, reject, cleanup });
+      // SAFETY: the cast widens `(value: T) => void` to `(value: unknown) => void`
+      // so the adapter dispatch path (which sees envelopes as `unknown`) can
+      // call resolve without re-introducing generics into the PendingEntry
+      // map. This is sound because the runtime does NOT validate response
+      // payloads — `T` is a caller assertion; the resolved value is whatever
+      // the host actually sent. Callers that need runtime narrowing should
+      // validate with Zod / Valibot at the boundary (see README).
+      pending.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        cleanup,
+      });
 
       if (callTimeoutMs > 0) {
         timer = setTimeout(() => {
@@ -315,6 +347,13 @@ export function createBridge(options: BridgeOptions): Bridge {
     resetEpoch++;
     rejectAllPending(new BridgeResetError());
     unsubscribeAllListeners();
+    // Settle any call() / ready() waiters that are still parked on the
+    // current readyPromise — otherwise a slow / hung adapter.ready() would
+    // strand them indefinitely past reset.
+    if (readyReject) {
+      readyReject(new BridgeResetError());
+      readyReject = null;
+    }
     readyPromise = null;
   }
 

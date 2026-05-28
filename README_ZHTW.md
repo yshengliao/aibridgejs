@@ -142,15 +142,17 @@ ready(options?: { signal?: AbortSignal }): Promise<void>
 
 ---
 
-### `bridge.call(method, payload?, options?)`
+### `bridge.call<T>(method, payload?, options?)`
 
 ```ts
-call(
+call<T = unknown>(
   method: string,
   payload?: unknown,
   options?: { timeoutMs?: number; signal?: AbortSignal },
-): Promise<unknown>
+): Promise<T>
 ```
+
+泛型 `T` 為預期回應 payload 的型別。執行期**不會**驗證回應內容 ─ `T` 屬於呼叫端宣告，若宿主不可信任，請在邊界以 Zod / Valibot 驗證。預設為 `unknown`，未指定泛型的舊呼叫端仍保持型別安全。
 
 送出 `request` 封包並等待配對的 `response`。在以下情況下 reject：
 
@@ -214,6 +216,46 @@ dispose(): void
 ```
 
 Reject 所有待處理的 `call()` Promise、移除所有事件監聽器，並呼叫 `adapter.dispose()`。`dispose()` 之後不得再使用該 bridge 物件。
+
+---
+
+## 錯誤語意（retry 對照表）
+
+所有錯誤類別皆繼承自 `BridgeError`。當作 discriminated union 處理，據此決定是否重試：
+
+| 錯誤 | 觸發時機 | 是否可重試？ | 建議處理 |
+|---|---|---|---|
+| `BridgeResetError` | 呼叫進行中（或前置的 ready 等待中）發生 `reset()`。 | **可。** | 直接重發。呼叫端的 `AbortSignal` 不受影響；用簡單 `for` 迴圈搭配重試上限即可。 |
+| `BridgeTimeoutError` | 在 `timeoutMs`（預設 10 秒、可逐次覆寫）內未收到回應。 | **可。** | 搭配 exponential backoff 重試。若宿主真的離線，重試會再次顯現為 timeout 或 transport 錯誤，仍可觀察。 |
+| `BridgeRemoteError` | 宿主回應 `ok: false`，攜帶 `code`、`message`、可選 `detail`。 | **依宿主契約而定。** | 依 `error.code` 分支，依宿主文件處理。一般而言一律重試會再次觸發同樣的應用層錯誤。 |
+| `BridgeDisposedError` | 呼叫前/中執行了 `dispose()`（或 iframe 適配器偵測到對應視窗消失）。 | **不可。** | bridge 已銷毀，若仍需通道請 `createBridge(...)` 重新建立。 |
+| `BridgeError` | catch-all base。從自訂適配器丟錯或想攔截全部時使用。 | ─ | 用 `error.name` 細分。 |
+
+執行期**不**自動重試。當策略為「暫態錯誤可恢復」時，請自行包裝：
+
+```ts
+// 參考實作。production 版建議再接受外部 AbortSignal，並在宿主長期失聯時
+// 升級為斷路器。
+async function callWithReset<T>(
+  bridge: Bridge,
+  method: string,
+  payload?: unknown,
+  maxAttempts = 3,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await bridge.call<T>(method, payload);
+    } catch (err) {
+      const isRetryable = err instanceof BridgeResetError || err instanceof BridgeTimeoutError;
+      if (!isRetryable || attempt + 1 >= maxAttempts) throw err;
+      // exponential backoff + jitter：避免 hot reload 連發、給 reset/ready
+      // 循環一點時間 settle。
+      const delayMs = Math.min(1000, 100 * 2 ** attempt) + Math.floor(Math.random() * 50);
+      await new Promise<void>((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+```
 
 ---
 
@@ -479,7 +521,7 @@ import { bridge } from './bridge';
 
 await bridge.ready();
 
-const { token } = await bridge.call('session.getToken', { scope: 'game' }) as { token: string };
+const { token } = await bridge.call<{ token: string }>('session.getToken', { scope: 'game' });
 
 bridge.on('game.forceEnd', (payload) => {
   handleForceEnd(payload);

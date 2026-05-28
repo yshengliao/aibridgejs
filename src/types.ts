@@ -64,7 +64,7 @@ export interface ReadyOptions {
 
 export interface Bridge {
   ready(options?: ReadyOptions): Promise<void>;
-  call(method: string, payload?: unknown, options?: CallOptions): Promise<unknown>;
+  call<T = unknown>(method: string, payload?: unknown, options?: CallOptions): Promise<T>;
   emit(event: string, payload?: unknown): Promise<void>;
   on<T = unknown>(event: string, listener: BridgeListener<T>, options?: OnOptions): () => void;
   platform(): BridgePlatform;
