@@ -899,7 +899,7 @@ addition; the production bundle is byte-identical to 0.3.2.**
 ### Changed (stability)
 
 - **0.3.x public surface declared frozen for the 1.0 track**
-  ([STABILITY.md](STABILITY.md), [STABILITY_ZHTW.md](STABILITY_ZHTW.md)): every
+  ([STABILITY.md](STABILITY.md), `STABILITY_ZHTW.md`): every
   `stable` export — core `createBridge`, the five error classes, and all four
   adapter / detect entrypoints with their types — is now committed to
   additive-only evolution until 1.0. The two `experimental` design-note items
@@ -960,7 +960,7 @@ All five findings below originated from an independent Codex review of the
 
 ### Fixed (docs)
 
-- **iframe `event.source` validation documented as opt-out, not absolute** ([README.md](README.md), [README_ZHTW.md](README_ZHTW.md), [STABILITY.md](STABILITY.md), [STABILITY_ZHTW.md](STABILITY_ZHTW.md)): the docs claimed `event.source` is validated on every inbound message; source-checking can in fact be disabled with `expectedSource: null` (intentional since 0.1.3). Wording now matches the contract.
+- **iframe `event.source` validation documented as opt-out, not absolute** ([README.md](README.md), [README_ZHTW.md](README_ZHTW.md), [STABILITY.md](STABILITY.md), `STABILITY_ZHTW.md`): the docs claimed `event.source` is validated on every inbound message; source-checking can in fact be disabled with `expectedSource: null` (intentional since 0.1.3). Wording now matches the contract.
 - **Removed stale `'cocos'` from the documented `platform()` union** ([README.md](README.md), [README_ZHTW.md](README_ZHTW.md), [llms.txt](llms.txt)): the literal was dropped from `BridgePlatform` in 0.1.3 but lingered in the API docs. Now `'iframe' | 'flutter' | 'mock' | 'unknown'`, matching `src/types.ts`.
 
 ### Internal (not shipped in the npm tarball)
