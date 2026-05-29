@@ -40,7 +40,7 @@ npm install aibridgejs
 | `aibridgejs/flutter` | `createFlutterAdapter` — InAppWebView JS handler 傳輸 · *需要原生 shell* |
 | `aibridgejs/detect` | `detectBridgeAdapter` — 依宿主全域變數自動挑選適配器 · *純 web 安全（自動 fallback）* |
 
-完整穩定度合約與純 web 安全語意請見 [STABILITY_ZHTW.md](./STABILITY_ZHTW.md)。
+完整穩定度合約與純 web 安全語意請見 [STABILITY.md](./STABILITY.md)。
 
 ---
 

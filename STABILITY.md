@@ -1,7 +1,5 @@
 # Stability Contract
 
-[English](STABILITY.md) | [繁體中文](STABILITY_ZHTW.md)
-
 This document is the per-export stability promise for `aibridgejs`, and the per-subpath safety promise for callers running in pure-web environments (no iframe parent, no native shell).
 
 ## Policy

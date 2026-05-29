@@ -71,8 +71,8 @@ jobs:
 
       - name: Publish (dry run)
         if: ${{ inputs.dry_run == true }}
-        run: npm publish --dry-run
+        run: npm publish --dry-run --provenance --access public
 
       - name: Publish to npm via OIDC Trusted Publishing
         if: ${{ inputs.dry_run != true }}
-        run: npm publish
+        run: npm publish --provenance --access public

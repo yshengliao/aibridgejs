@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-29
+
+Consistency patch — CI workflow and documentation hygiene. No runtime API
+change; `dist/` is byte-identical to 0.4.0.
+
+### Changed (CI)
+
+- **`publish.yml` now passes `--provenance --access public` explicitly**
+  ([.github/workflows/publish.yml](.github/workflows/publish.yml)), matching the
+  rest of the ai*js family. This makes intent explicit rather than fixing a
+  behaviour gap: 0.4.0 was already published with SLSA provenance (npm OIDC
+  Trusted Publishing enables it automatically) and `--access public` is the
+  default for this unscoped package. The explicit flags keep the workflow
+  consistent with its siblings and robust if npm's defaults change.
+
+### Removed (repo-only; not shipped in the npm tarball)
+
+- **`STABILITY_ZHTW.md`**: the Traditional-Chinese mirror of the stability
+  contract is removed to match the family convention — the English
+  `STABILITY.md` is the single source. The language-switcher line atop
+  `STABILITY.md` is removed with it, and `README_ZHTW.md`'s stability link now
+  points to `STABILITY.md`.
+
+### Compatibility
+
+Non-breaking: no new exports, no removed exports, no signature changes.
+`dist/` bundles are byte-identical to 0.4.0; the published tarball differs only
+in `README_ZHTW.md` (one documentation link) and `llms-full.txt` (regenerated
+from the trimmed `STABILITY.md` and this changelog).
+
 ## [0.4.0] - 2026-05-29
 
 Dependency-hygiene milestone and 1.0-track stability freeze. **No runtime API
