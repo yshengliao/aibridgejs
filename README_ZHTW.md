@@ -193,7 +193,7 @@ on(
 ### `bridge.platform()`
 
 ```ts
-platform(): 'iframe' | 'flutter' | 'mock' | 'cocos' | 'unknown'
+platform(): 'iframe' | 'flutter' | 'mock' | 'unknown'
 ```
 
 回傳目前適配器所回報的平台字串。可用於撰寫條件性行為，而無需耦合到特定的適配器 import。
@@ -305,7 +305,7 @@ const adapter = createIframeAdapter(window, {
 iframe 適配器以 `postMessage` 送出訊息，並透過 `window.addEventListener('message', ...)` 接收入站訊息。每一則入站訊息都會經過驗證：
 
 1. `event.origin` 必須與 `targetOrigin` 完全吻合。
-2. `event.source` 必須符合預期的 frame 參考。
+2. `event.source` 必須符合預期的 frame 參考，除非以 `expectedSource: null` 顯式關閉 source 檢查。
 3. 解析後的內容必須是合法的 `BridgeEnvelope`（具有 `kind` 欄位）；格式錯誤的訊息會被靜默丟棄。
 
 `targetOrigin: '*'` 明確禁止，在建構時即會拋出例外。

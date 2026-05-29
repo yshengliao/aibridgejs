@@ -196,7 +196,7 @@ Registers a listener for inbound `event` envelopes whose `event` field matches t
 ### `bridge.platform()`
 
 ```ts
-platform(): 'iframe' | 'flutter' | 'mock' | 'cocos' | 'unknown'
+platform(): 'iframe' | 'flutter' | 'mock' | 'unknown'
 ```
 
 Returns the platform string reported by the active adapter. Useful for conditional behaviour without coupling to a specific adapter import.
@@ -308,7 +308,7 @@ const adapter = createIframeAdapter(window, {
 The iframe adapter uses `postMessage` for outbound messages and `window.addEventListener('message', ...)` for inbound. Every inbound message is validated:
 
 1. `event.origin` must exactly match `targetOrigin`.
-2. `event.source` must match the expected frame reference.
+2. `event.source` must match the expected frame reference, unless source-checking is explicitly disabled by passing `expectedSource: null`.
 3. The parsed body must be a valid `BridgeEnvelope` (has `kind`); malformed messages are silently discarded.
 
 `targetOrigin: '*'` is explicitly forbidden and throws at construction time.

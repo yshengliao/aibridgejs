@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createMockAdapter } from "../src/mock/index.js";
 import type { BridgeEnvelope } from "../src/types.js";
 
@@ -84,6 +84,20 @@ describe("aibridgejs mock adapter", () => {
     await adapter.post({ kind: "event", event: "second", timestamp: Date.now() });
 
     expect(seen).toHaveLength(1);
+  });
+
+  test("manual unsubscribe detaches the signal abort listener", () => {
+    // Regression: calling the returned unsubscribe must also remove the
+    // "abort" listener it parked on the signal, mirroring bridge.on(), so a
+    // long-lived signal cannot accumulate listeners across sub/unsub churn.
+    const adapter = createMockAdapter();
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+
+    const off = adapter.subscribe(() => {}, { signal: controller.signal });
+    off();
+
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 
   test("dispose rejects subsequent post and receive becomes no-op", async () => {

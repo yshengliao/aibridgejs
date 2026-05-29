@@ -51,7 +51,7 @@ Each subpath carries a **pure-web safety** tag describing what happens when you 
 
 | Export | Stability | Pure-web safety | Since | Notes |
 |---|---|---|---|---|
-| `createIframeAdapter` | stable | pure-web safe | 0.1.0 | Requires an exact `targetOrigin`; wildcard `*` is rejected at construction. Both `event.origin` and `event.source` are validated on every inbound message. |
+| `createIframeAdapter` | stable | pure-web safe | 0.1.0 | Requires an exact `targetOrigin`; wildcard `*` is rejected at construction. `event.origin` is always validated; `event.source` is validated against the expected frame unless source-checking is explicitly disabled with `expectedSource: null`. |
 | `IframeAdapter`, `IframeAdapterOptions`, `IframeHost`, `IframePostTarget`, `MessageEventLike` (types) | stable | — | 0.1.0 | |
 
 ### `aibridgejs/flutter`

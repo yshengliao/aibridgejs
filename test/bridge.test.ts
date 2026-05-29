@@ -392,6 +392,58 @@ describe("aibridgejs additional correctness", () => {
     }
   });
 
+  test("A9b: remote error with non-string code/message coerces to safe string defaults", async () => {
+    const adapter = createMockAdapter();
+    adapter.subscribe((envelope) => {
+      if (envelope.kind === "request") {
+        adapter.receive({
+          kind: "response",
+          id: envelope.id,
+          ok: false,
+          // Malformed host: non-string code/message. BridgeRemoteError types
+          // both as string, so the bridge must coerce rather than leak them.
+          error: { code: 123, message: { not: "a string" } } as never,
+          timestamp: Date.now(),
+        });
+      }
+    });
+
+    const bridge = createBridge({ adapter });
+    try {
+      await bridge.call("x");
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(BridgeRemoteError);
+      const err = e as BridgeRemoteError;
+      expect(err.code).toBe("REMOTE_ERROR");
+      expect(err.message).toBe("Remote error");
+    }
+  });
+
+  test("A10: reset detaches the per-round dispose listener from the internal signal", async () => {
+    // Regression: repeated reset() against a hung adapter.ready() must not
+    // accumulate orphaned "abort" listeners on the bridge's internal signal.
+    // The reset path (wrappedReject) now removes the round's listener.
+    const adapter = createMockAdapter();
+    const capturedSignals: AbortSignal[] = [];
+    adapter.ready = (signal?: AbortSignal) => {
+      if (signal) capturedSignals.push(signal);
+      return new Promise<void>(() => {}); // hangs; settled only via reset()
+    };
+    const bridge = createBridge({ adapter });
+
+    const r1 = bridge.ready();
+    const internalSignal = capturedSignals[0];
+    if (!internalSignal) throw new Error("adapter.ready was not invoked");
+    const removeSpy = vi.spyOn(internalSignal, "removeEventListener");
+
+    bridge.reset();
+    await expect(r1).rejects.toBeInstanceOf(BridgeResetError);
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+
+    bridge.dispose();
+  });
+
   test("inbound 'request' envelope is silently ignored (v0.1 scope)", async () => {
     const adapter = createMockAdapter();
     const bridge = createBridge({ adapter });
@@ -495,6 +547,25 @@ describe("aibridgejs additional correctness", () => {
     const pending = bridge.ready({ signal: controller.signal });
     bridge.dispose();
     await expect(pending).rejects.toBeInstanceOf(BridgeDisposedError);
+  });
+
+  test("ready({signal}) rejects with the abort reason when the signal aborts mid-flight", async () => {
+    // A2 covers the pre-aborted signal (synchronous reject before adapter.ready
+    // is ever called). This covers the complementary path: adapter.ready() is
+    // in flight (unsettled) when the user signal aborts, exercising the
+    // onUserAbort handler in the user-signal wrapper of ready().
+    const adapter = createMockAdapter();
+    adapter.ready = () => new Promise<void>(() => {});
+    const bridge = createBridge({ adapter });
+    const controller = new AbortController();
+
+    const pending = bridge.ready({ signal: controller.signal });
+    const reason = new Error("aborted mid-ready");
+    queueMicrotask(() => controller.abort(reason));
+
+    await expect(pending).rejects.toBe(reason);
+
+    bridge.dispose();
   });
 
   test("adapter.ready rejection propagates through bridge.ready({signal})", async () => {

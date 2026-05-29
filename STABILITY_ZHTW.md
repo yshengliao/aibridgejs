@@ -51,7 +51,7 @@ aibridgejs 遵循 [semver](https://semver.org/)。在 **0.x** 系列內：
 
 | Export | 穩定度 | Pure-web safety | 自版本 | 備註 |
 |---|---|---|---|---|
-| `createIframeAdapter` | stable | 純 web 安全 | 0.1.0 | 需要精確的 `targetOrigin`；萬用字元 `*` 在建構時即被拒絕。每則入站訊息都會驗證 `event.origin` 與 `event.source`。 |
+| `createIframeAdapter` | stable | 純 web 安全 | 0.1.0 | 需要精確的 `targetOrigin`；萬用字元 `*` 在建構時即被拒絕。`event.origin` 一律驗證；`event.source` 預設會比對預期 frame，除非以 `expectedSource: null` 顯式關閉 source 檢查。 |
 | `IframeAdapter`、`IframeAdapterOptions`、`IframeHost`、`IframePostTarget`、`MessageEventLike`（型別） | stable | — | 0.1.0 | |
 
 ### `aibridgejs/flutter`

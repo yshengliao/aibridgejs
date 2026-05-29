@@ -101,11 +101,12 @@ export function createIframeAdapter(
       if (disposed) return () => {};
       subscribers.add(listener);
 
+      const signal = opts?.signal;
       const unsubscribe = (): void => {
         subscribers.delete(listener);
+        signal?.removeEventListener("abort", unsubscribe);
       };
 
-      const signal = opts?.signal;
       if (signal) {
         if (signal.aborted) {
           unsubscribe();

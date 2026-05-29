@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-29
+
+All five findings below originated from an independent Codex review of the
+0.3.0 runtime. None are breaking.
+
+### Fixed (correctness)
+
+- **`createBridge` coerces malformed remote-error fields** ([src/bridge.ts](src/bridge.ts)): a `response` envelope with a non-string `error.code` / `error.message` could surface a non-string on `BridgeRemoteError`, whose `code` / `message` are typed `string`. The bridge now falls back to `"REMOTE_ERROR"` / `"Remote error"` when a field is missing or the wrong type, so a malformed host cannot violate the error type contract. Well-formed string errors are unchanged.
+
+### Fixed (resource leaks)
+
+- **`ready()` detaches its dispose listener on every settle path** ([src/bridge.ts](src/bridge.ts)): repeated `reset()` against a hung `adapter.ready()` previously left one orphaned `"abort"` listener per round on the internal signal until `dispose()`. The reset path now removes the round's listener. No behavioural change — the identity guard already prevented double-settle.
+- **Adapter `subscribe()` unsubscribe detaches its signal listener** ([src/mock/index.ts](src/mock/index.ts), [src/iframe/index.ts](src/iframe/index.ts), [src/flutter/index.ts](src/flutter/index.ts)): the returned unsubscribe now calls `signal.removeEventListener("abort", ...)`, mirroring `bridge.on()`. Manual unsubscribe with a long-lived `AbortSignal` no longer accumulates listeners.
+
+### Fixed (docs)
+
+- **iframe `event.source` validation documented as opt-out, not absolute** ([README.md](README.md), [README_ZHTW.md](README_ZHTW.md), [STABILITY.md](STABILITY.md), [STABILITY_ZHTW.md](STABILITY_ZHTW.md)): the docs claimed `event.source` is validated on every inbound message; source-checking can in fact be disabled with `expectedSource: null` (intentional since 0.1.3). Wording now matches the contract.
+- **Removed stale `'cocos'` from the documented `platform()` union** ([README.md](README.md), [README_ZHTW.md](README_ZHTW.md), [llms.txt](llms.txt)): the literal was dropped from `BridgePlatform` in 0.1.3 but lingered in the API docs. Now `'iframe' | 'flutter' | 'mock' | 'unknown'`, matching `src/types.ts`.
+
+### Internal (not shipped in the npm tarball)
+
+- Test-suite hardening: dropped the unused `jsdom` devDependency (tests run on the `node` environment), added a `fast-check` property test for request/response id-correlation under arbitrary response ordering, and added a `ready()` mid-flight abort test plus regression tests for the fixes above. **112 tests**; coverage 97.88 / 91.86 / 100 / 100.
+
+### Compatibility
+
+Non-breaking: no new exports, no removed exports, no signature changes. The remote-error coercion and listener-cleanup fixes only alter behaviour for malformed input or pathological reset/churn scenarios; well-formed usage is unchanged. All subpath bundles stay within their gzip budgets.
+
 ## [0.3.0] - 2026-05-29
 
 ### Added (docs)

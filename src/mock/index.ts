@@ -43,11 +43,12 @@ export function createMockAdapter(): MockAdapter {
       if (disposed) return () => {};
       subscribers.add(listener);
 
+      const signal = options?.signal;
       const unsubscribe = (): void => {
         subscribers.delete(listener);
+        signal?.removeEventListener("abort", unsubscribe);
       };
 
-      const signal = options?.signal;
       if (signal) {
         if (signal.aborted) {
           unsubscribe();

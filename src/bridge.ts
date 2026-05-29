@@ -59,13 +59,14 @@ export function createBridge(options: BridgeOptions): Bridge {
           entry.resolve(envelope.payload);
         } else {
           const err = envelope.error;
-          entry.reject(
-            new BridgeRemoteError(
-              err?.message ?? "Remote error",
-              err?.code ?? "REMOTE_ERROR",
-              err?.detail,
-            ),
-          );
+          // Defensive coercion: ResponseEnvelope types code/message as strings,
+          // but the envelope crosses an untrusted boundary. A malformed host
+          // sending a non-string code/message must not surface a non-string on
+          // BridgeRemoteError (whose code/message are typed string). Fall back
+          // to the defaults when a field is missing or the wrong type.
+          const message = typeof err?.message === "string" ? err.message : "Remote error";
+          const code = typeof err?.code === "string" ? err.code : "REMOTE_ERROR";
+          entry.reject(new BridgeRemoteError(message, code, err?.detail));
         }
         return;
       }
@@ -104,19 +105,24 @@ export function createBridge(options: BridgeOptions): Bridge {
       // The bridge wraps adapter.ready so that dispose() / reset() can settle
       // the cached promise even when an adapter ignores its signal argument.
       readyPromise = new Promise<void>((resolve, reject) => {
+        // Hoisted so wrappedReject can remove this exact listener by identity.
+        // biome-ignore lint/style/useConst: assigned below before any call site runs
+        let onDisposed!: () => void;
         // Identity-guarded reject. After reset() invalidates this promise and
         // a new one takes its place, a late adapter.ready() resolve/reject
         // from THIS round must not clear the NEW round's readyReject. We
         // capture the local function and only clear the module-level slot if
-        // it still points at our handle.
+        // it still points at our handle. It also detaches the dispose listener
+        // on every settle path, so repeated reset() against a hung
+        // adapter.ready() can't accumulate orphaned listeners on the signal.
         const wrappedReject = (reason: unknown): void => {
+          internalController.signal.removeEventListener("abort", onDisposed);
           if (readyReject === wrappedReject) readyReject = null;
           reject(reason);
         };
         readyReject = wrappedReject;
 
-        const onDisposed = (): void => {
-          internalController.signal.removeEventListener("abort", onDisposed);
+        onDisposed = (): void => {
           wrappedReject(new BridgeDisposedError());
         };
         internalController.signal.addEventListener("abort", onDisposed, { once: true });
@@ -129,7 +135,6 @@ export function createBridge(options: BridgeOptions): Bridge {
             else resolve();
           },
           (err) => {
-            internalController.signal.removeEventListener("abort", onDisposed);
             wrappedReject(err);
           },
         );

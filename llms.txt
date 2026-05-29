@@ -34,7 +34,7 @@ Request/response correlation works through a string id embedded in every envelop
 - `call(method, payload?, options?)` — Promise<unknown>. Sends a request envelope; resolves with response payload. Rejects on host error, timeout, abort, or dispose. Accepts per-call timeoutMs and AbortSignal.
 - `emit(event, payload?)` — Promise<void>. Sends an event envelope toward the host. Fire-and-forget; no response tracked.
 - `on(event, listener, options?)` — () => void. Subscribes to inbound host events. Options: once, signal. Returns unsubscribe function.
-- `platform()` — string. Returns the adapter's platform identifier: 'iframe' | 'flutter' | 'mock' | 'cocos' | 'unknown'.
+- `platform()` — string. Returns the adapter's platform identifier: 'iframe' | 'flutter' | 'mock' | 'unknown'.
 - `reset()` — void. Clears pending calls, listeners, and readiness state without disposing the adapter.
 - `dispose()` — void. Rejects all pending calls with BridgeDisposedError, removes all listeners, calls adapter.dispose().
 
